@@ -193,3 +193,199 @@ API_KEY=your_api_key
 * Use **ENV** for values used by your app at **runtime** (like `PORT`, `NODE_ENV`, `API_KEY`).
 * Use **ARG** for **build-time configs** (like base image version, labels).
 * Avoid putting secrets in Dockerfile via `ENV` or `ARG`.
+
+---
+
+# ⚙️ Docker: Build-Time `ARG` vs Runtime `ENV` — Practical Guide
+
+Docker gives us two variable types:
+
+| Variable Type | Purpose           | Set Using                                          | Used In          | Available In       |
+| ------------- | ----------------- | -------------------------------------------------- | ---------------- | ------------------ |
+| `ARG`         | Build-time config | `--build-arg` during `docker build`                | Dockerfile only  | Build process only |
+| `ENV`         | Runtime config    | `--env`, `-e`, or `--env-file` during `docker run` | Dockerfile & App | Running container  |
+
+---
+
+## 🔧 1. Build-Time ARG
+
+### ✅ Syntax in Dockerfile
+
+```dockerfile
+ARG <KEY>[=<default_value>]
+```
+
+You can reference `ARG` values with `$<KEY>`, just like environment variables.
+
+### ✅ Syntax to build with ARG
+
+```bash
+docker build --build-arg <KEY>=<value> -t <image_name> .
+```
+
+---
+
+### 🔄 Example: Dynamic Default Port
+
+#### 🐳 Dockerfile
+
+```dockerfile
+# Declare build-time argument with default
+ARG DEFAULT_PORT=80
+
+# Set runtime ENV from ARG
+ENV PORT=$DEFAULT_PORT
+
+# Use it to expose correct port
+EXPOSE $PORT
+
+WORKDIR /app
+COPY . .
+RUN npm install
+
+CMD ["node", "server.js"]
+```
+
+#### 🧱 Build with default value (80)
+
+```bash
+docker build -t myapp:prod .
+```
+
+#### 🧱 Build with custom port (8000)
+
+```bash
+docker build --build-arg DEFAULT_PORT=8000 -t myapp:dev .
+```
+
+---
+
+### 📌 Best Practice: ARG Placement for Cache Efficiency
+
+* Place `ARG` **only where it’s needed**.
+* If you place an `ARG` **before a layer like `RUN npm install`**, then every time the `ARG` value changes, that layer is re-executed.
+* Example:
+
+```dockerfile
+# GOOD: Keeps npm install cached
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+
+# NOW insert ARG
+ARG DEFAULT_PORT=8000
+ENV PORT=$DEFAULT_PORT
+```
+
+---
+
+## 🌐 2. Runtime ENV Variables
+
+> Use when your application (like a Node server) needs access to dynamic data at runtime.
+
+### ✅ Syntax in Dockerfile
+
+```dockerfile
+ENV <KEY> <value>
+```
+
+### ✅ Syntax to run container with ENV
+
+```bash
+docker run -e <KEY>=<value> -p <external>:<internal> <image_name>
+# OR
+docker run --env-file .env -p 8000:8000 <image_name>
+```
+
+---
+
+### 🔄 Example: Using ENV in Node.js
+
+#### 📄 server.js
+
+```js
+const port = process.env.PORT || 3000;
+
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
+```
+
+#### 🐳 Dockerfile
+
+```dockerfile
+ENV PORT=80
+EXPOSE $PORT
+CMD ["node", "server.js"]
+```
+
+#### ▶️ Run with custom port
+
+```bash
+docker run -e PORT=8000 -p 8000:8000 myapp:prod
+```
+
+---
+
+## 📁 3. Using `.env` File
+
+### ✅ Syntax of `.env`
+
+```env
+PORT=8000
+API_KEY=abc123
+```
+
+### ✅ Run with `.env`
+
+```bash
+docker run --env-file .env -p 8000:8000 myapp:prod
+```
+
+---
+
+## 🔒 4. Security Best Practices
+
+| DO ✅                                | DON'T ❌                           |
+| ----------------------------------- | --------------------------------- |
+| Use `.env` file and `.gitignore` it | Hard-code secrets in Dockerfile   |
+| Pass secrets at runtime only        | Use `ENV` for passwords or tokens |
+| Use `--env-file` or secret manager  | Bake credentials into image       |
+
+### 🚨 Warning:
+
+`ENV` values set in Dockerfile are **visible in image history**:
+
+```bash
+docker history <image_name>
+```
+
+---
+
+## 📊 Quick Reference
+
+| Feature           | `ARG`                      | `ENV`                           |
+| ----------------- | -------------------------- | ------------------------------- |
+| Set via           | `--build-arg` during build | `-e`, `--env`, or `--env-file`  |
+| Used in           | Dockerfile only            | Dockerfile & Application        |
+| Available during  | Build                      | Runtime                         |
+| Can hold secrets? | ❌ No                       | ✅ Yes (but avoid in Dockerfile) |
+| Visible in image? | ❌ Not unless exposed later | ✅ If set in Dockerfile          |
+
+---
+
+## ✅ Final Commands Recap
+
+```bash
+# Build with default ARG
+docker build -t myapp:prod .
+
+# Build with custom ARG value
+docker build --build-arg DEFAULT_PORT=8000 -t myapp:dev .
+
+# Run with runtime ENV
+docker run -e PORT=8000 -p 8000:8000 myapp:dev
+
+# OR use .env file
+docker run --env-file .env -p 8000:8000 myapp:dev
+```
